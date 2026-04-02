@@ -11,9 +11,13 @@
  
 import os
 import psycopg2
-from flask import Flask, request
+from flask import Flask,render_template, request, redirect
+
 
 app = Flask(__name__)
+
+def get_connection():
+    return psycopg2.connect(os.environ.get("DATABASE_URL"))
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -37,114 +41,67 @@ if DATABASE_URL:
 
 @app.route('/', methods=['GET', 'POST'])
 def calculator():
-    result = ""
+    conn = get_connection()
+    cur = conn.cursor()
 
     if request.method == 'POST':
-        num1 = request.form.get('num1')
-        num2 = request.form.get('num2')
-        operation = request.form.get('operation')
+        num1 = float(request.form['num1'])
+        num2 = float(request.form['num2'])
+        operation = request.form['operation']
 
-        try:
-            num1 = float(num1)
-            num2 = float(num2)
+        if operation == 'add':
+            result = num1 + num2
+        elif operation == 'subtract':
+            result = num1 - num2
+        elif operation == 'multiply':
+            result = num1 * num2
+        elif operation == 'divide':
+            result = num1 / num2 if num2 != 0 else 0
 
-            if operation == 'add':
-                result = num1 + num2
-            elif operation == 'subtract':
-                result = num1 - num2
-            elif operation == 'multiply':
-                result = num1 * num2
-            elif operation == 'divide':
-                if num2 == 0:
-                    result = "Error: Division by zero"
-                else:
-                    result = num1 / num2
-            else:
-                result = "Invalid operation"
+        # CREATE
+        cur.execute(
+            "INSERT INTO calculations (num1, num2, operation, result) VALUES (%s, %s, %s, %s)",
+            (num1, num2, operation, result)
+        )
+        conn.commit()
 
-            # Save ONLY valid numeric results to DB
-            if isinstance(result, (int, float)):
-                if cur and conn:
-                    try:
-                        cur.execute(
-                            "INSERT INTO calculations (num1, num2, operation, result) VALUES (%s, %s, %s, %s)",
-                            (num1, num2, operation, result)
-                        )
-                        conn.commit()
-                    except Exception as e:
-                        print("Database error:", e)
+    # READ
+    cur.execute("SELECT * FROM calculations ORDER BY id DESC")
+    data = cur.fetchall()
 
-        except Exception as e:
-            result = "Error: Invalid input"
+    cur.close()
+    conn.close()
 
-    return f"""
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <title>Calculator</title>
-        <style>
-            body {{
-                font-family: Arial;
-                background: #f4f6f8;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                height: 100vh;
-            }}
+    return render_template('index.html', data=data)
 
-            .container {{
-                background: white;
-                padding: 30px;
-                border-radius: 10px;
-                box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
-                text-align: center;
-            }}
+@app.route('/delete/<int:id>')
+def delete(id):
+    conn = get_connection()
+    cur = conn.cursor()
 
-            input {{
-                padding: 10px;
-                margin: 10px;
-                width: 200px;
-            }}
+    cur.execute("DELETE FROM calculations WHERE id = %s", (id,))
+    conn.commit()
 
-            button {{
-                padding: 10px 15px;
-                margin: 5px;
-                border: none;
-                border-radius: 5px;
-                cursor: pointer;
-            }}
+    cur.close()
+    conn.close()
 
-            .add {{ background: #4CAF50; color: white; }}
-            .sub {{ background: #f44336; color: white; }}
-            .mul {{ background: #2196F3; color: white; }}
-            .div {{ background: #ff9800; color: white; }}
+    return redirect('/')
 
-            h2 {{
-                margin-bottom: 20px;
-            }}
-        </style>
-    </head>
+@app.route('/update/<int:id>', methods=['POST'])
+def update(id):
+    new_result = request.form['result']
 
-    <body>
-        <div class="container">
-            <h2>Flask Calculator</h2>
+    conn = get_connection()
+    cur = conn.cursor()
 
-            <form method="post">
-                <input type="text" name="num1" placeholder="First number" required><br>
-                <input type="text" name="num2" placeholder="Second number" required><br>
+    cur.execute(
+        "UPDATE calculations SET result = %s WHERE id = %s",
+        (new_result, id)
+    )
+    conn.commit()
 
-                <button class="add" name="operation" value="add">+</button>
-                <button class="sub" name="operation" value="subtract">-</button>
-                <button class="mul" name="operation" value="multiply">*</button>
-                <button class="div" name="operation" value="divide">/</button>
-            </form>
+    cur.close()
+    conn.close()
 
-            <h3>Result: {result}</h3>
-        </div>
-    </body>
-        </html>
-        """
-    
-    if __name__ == '__main__':
-        port = int(os.environ.get("PORT", 8080))
-        app.run(host='0.0.0.0', port=port)
+    return redirect('/')
+
