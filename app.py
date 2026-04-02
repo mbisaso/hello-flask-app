@@ -9,14 +9,36 @@
 #if __name__ == '__main__':
  #   app.run(host='0.0.0.0', port=8080)
  
+import os
+import psycopg2
 from flask import Flask, request
 
 app = Flask(__name__)
 
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+conn = None
+cur = None
+
+if DATABASE_URL:
+    conn = psycopg2.connect(DATABASE_URL)
+    cur = conn.cursor()
+
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS calculations (
+        id SERIAL PRIMARY KEY,
+        num1 FLOAT,
+        num2 FLOAT,
+        operation TEXT,
+        result FLOAT
+    )
+    """)
+    conn.commit()
+
 @app.route('/', methods=['GET', 'POST'])
 def calculator():
     result = ""
-    
+
     if request.method == 'POST':
         num1 = request.form.get('num1')
         num2 = request.form.get('num2')
@@ -33,29 +55,96 @@ def calculator():
             elif operation == 'multiply':
                 result = num1 * num2
             elif operation == 'divide':
-                result = num1 / num2
+                if num2 == 0:
+                    result = "Error: Division by zero"
+                else:
+                    result = num1 / num2
+            else:
+                result = "Invalid operation"
 
-        except:
+            # Save ONLY valid numeric results to DB
+            if isinstance(result, (int, float)):
+                if cur and conn:
+                    try:
+                        cur.execute(
+                            "INSERT INTO calculations (num1, num2, operation, result) VALUES (%s, %s, %s, %s)",
+                            (num1, num2, operation, result)
+                        )
+                        conn.commit()
+                    except Exception as e:
+                        print("Database error:", e)
+
+        except Exception as e:
             result = "Error: Invalid input"
 
     return f"""
-    <h2>Simple Flask Calculator</h2>
-    <form method="post">
-        <input type="text" name="num1" placeholder="First number" required><br><br>
-        <input type="text" name="num2" placeholder="Second number" required><br><br>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Calculator</title>
+        <style>
+            body {{
+                font-family: Arial;
+                background: #f4f6f8;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+            }}
 
-        <select name="operation">
-            <option value="add">Add</option>
-            <option value="subtract">Subtract</option>
-            <option value="multiply">Multiply</option>
-            <option value="divide">Divide</option>
-        </select><br><br>
+            .container {{
+                background: white;
+                padding: 30px;
+                border-radius: 10px;
+                box-shadow: 0px 4px 10px rgba(0,0,0,0.1);
+                text-align: center;
+            }}
 
-        <button type="submit">Calculate</button>
-    </form>
+            input {{
+                padding: 10px;
+                margin: 10px;
+                width: 200px;
+            }}
 
-    <h3>Result: {result}</h3>
-    """
+            button {{
+                padding: 10px 15px;
+                margin: 5px;
+                border: none;
+                border-radius: 5px;
+                cursor: pointer;
+            }}
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+            .add {{ background: #4CAF50; color: white; }}
+            .sub {{ background: #f44336; color: white; }}
+            .mul {{ background: #2196F3; color: white; }}
+            .div {{ background: #ff9800; color: white; }}
+
+            h2 {{
+                margin-bottom: 20px;
+            }}
+        </style>
+    </head>
+
+    <body>
+        <div class="container">
+            <h2>Flask Calculator</h2>
+
+            <form method="post">
+                <input type="text" name="num1" placeholder="First number" required><br>
+                <input type="text" name="num2" placeholder="Second number" required><br>
+
+                <button class="add" name="operation" value="add">+</button>
+                <button class="sub" name="operation" value="subtract">-</button>
+                <button class="mul" name="operation" value="multiply">*</button>
+                <button class="div" name="operation" value="divide">/</button>
+            </form>
+
+            <h3>Result: {result}</h3>
+        </div>
+    </body>
+        </html>
+        """
+    
+    if __name__ == '__main__':
+        port = int(os.environ.get("PORT", 8080))
+        app.run(host='0.0.0.0', port=port)
