@@ -105,3 +105,4 @@ def update(id):
 
     return redirect('/')
 
+    return render_template('index.html', data=data, result=result)
