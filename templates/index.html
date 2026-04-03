@@ -16,7 +16,7 @@
 </form>
 
 {% if result is not none %}
-    <h3>Result: {{ result }}</h3>
+    <h3>Result: {{ result if result is not none else '' }}</h3>
 {% endif %}
 
 <h2>History</h2>

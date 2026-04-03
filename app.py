@@ -26,12 +26,12 @@ def init_db():
         conn.commit()
         cur.close()
         conn.close()
-        print("Database initialized successfully!")
     except Exception as e:
         print(f"DB init failed: {e}")
 
 @app.route('/', methods=['GET', 'POST'])
 def calculator():
+    result = None  # <-- track result to show on page
     try:
         conn = get_connection()
         cur = conn.cursor()
@@ -40,7 +40,6 @@ def calculator():
             num1 = float(request.form['num1'])
             num2 = float(request.form['num2'])
             operation = request.form['operation']
-            result = 0
 
             if operation == 'add':
                 result = num1 + num2
@@ -49,11 +48,12 @@ def calculator():
             elif operation == 'multiply':
                 result = num1 * num2
             elif operation == 'divide':
-                result = num1 / num2 if num2 != 0 else 0
+                # Fix: use float division, handle zero
+                result = num1 / num2 if num2 != 0 else "Error: division by zero"
 
             cur.execute(
                 "INSERT INTO calculations (num1, num2, operation, result) VALUES (%s, %s, %s, %s)",
-                (num1, num2, operation, result)
+                (num1, num2, operation, result if isinstance(result, float) else 0)
             )
             conn.commit()
 
@@ -61,7 +61,7 @@ def calculator():
         data = cur.fetchall()
         cur.close()
         conn.close()
-        return render_template('index.html', data=data)
+        return render_template('index.html', data=data, result=result)
 
     except Exception as e:
         return f"<h2>Database Error: {e}</h2>", 500
